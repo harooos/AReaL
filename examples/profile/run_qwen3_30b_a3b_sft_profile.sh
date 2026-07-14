@@ -1,0 +1,170 @@
+#!/bin/bash
+set -uo pipefail
+
+ROOT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
+cd "$ROOT_DIR" || exit 1
+export PYTHONPATH="${ROOT_DIR}:${PYTHONPATH:-}"
+
+STAMP=${PROFILE_STAMP:-$(date +%Y%m%d_%H%M%S)}
+CONFIG=${CONFIG:-examples/profile/qwen3_30b_a3b_sft_profile.yaml}
+EXPERIMENT_NAME=${EXPERIMENT_NAME:-qwen3-30b-a3b-sft-profile}
+FILEROOT=${FILEROOT:-/tmp/areal/experiments}
+MODEL_PATH=${MODEL_PATH:-Qwen/Qwen3-30B-A3B}
+PROFILE_STEP=${PROFILE_STEP:-1}
+TOTAL_STEPS=${TOTAL_STEPS:-$((PROFILE_STEP + 1))}
+PROFILE_RANKS=${PROFILE_RANKS:-0}
+PROFILE_KINDS=${PROFILE_KINDS:-kernel,memory}
+N_GPUS_PER_NODE=${N_GPUS_PER_NODE:-8}
+TRAIN_BATCH_SIZE=${TRAIN_BATCH_SIZE:-1}
+PROFILE_FAKE_SEQ_LEN=${PROFILE_FAKE_SEQ_LEN:-131072}
+PROFILE_FAKE_DATASET_SIZE=${PROFILE_FAKE_DATASET_SIZE:-8}
+PROFILE_FAKE_LOSS_START_RATIO=${PROFILE_FAKE_LOSS_START_RATIO:-0.5}
+RUN_ROOT=${RUN_ROOT:-${ROOT_DIR}/profile_data/${STAMP}_qwen3-30b-a3b_fake128k_sft_profile}
+AREAL_LOG_USER=${AREAL_LOG_USER:-$(python -c 'import getpass; print(getpass.getuser())')}
+
+mkdir -p "$RUN_ROOT"
+
+monitor_gpu() {
+  local out_csv=$1
+  echo "timestamp,index,memory.used [MiB]" > "$out_csv"
+  while true; do
+    nvidia-smi --query-gpu=timestamp,index,memory.used --format=csv,noheader,nounits >> "$out_csv" 2>/dev/null || true
+    sleep 1
+  done
+}
+
+count_files() {
+  local pattern=$1
+  compgen -G "$pattern" >/dev/null || {
+    printf "0"
+    return
+  }
+  compgen -G "$pattern" | wc -l
+}
+
+step_done() {
+  local log=$1
+  [[ -f "$log" ]] && grep -Eq "Training completes|Train step ${TOTAL_STEPS}/" "$log"
+}
+
+should_run_kind() {
+  local kind=$1
+  [[ ",${PROFILE_KINDS}," == *",${kind},"* ]]
+}
+
+run_case() {
+  local profile_kind=$1
+  local trial_name="qwen3_30b_a3b_fake128k_${profile_kind}_${STAMP}"
+  local case_dir="${RUN_ROOT}/${trial_name}"
+  local launcher_log="${case_dir}/launcher.log"
+  local mem_csv="${case_dir}/nvidia_smi.csv"
+  local name_resolve_root="${FILEROOT}/name_resolve/${trial_name}"
+  local trial_log_dir="${FILEROOT}/logs/${AREAL_LOG_USER}/${EXPERIMENT_NAME}/${trial_name}"
+  local trainer_log="${trial_log_dir}/trainer.log"
+  local perf_ranks=""
+  local memory_ranks=""
+  local torch_profiler_profile_memory=false
+  local -a profile_args=()
+
+  mkdir -p "$case_dir" "$name_resolve_root"
+
+  case "$profile_kind" in
+    kernel)
+      perf_ranks="$PROFILE_RANKS"
+      profile_args=(
+        perf_tracer.enabled=true
+        perf_tracer.experiment_name="${EXPERIMENT_NAME}"
+        perf_tracer.trial_name="${trial_name}"
+        perf_tracer.fileroot="${FILEROOT}"
+        perf_tracer.save_interval=1
+        perf_tracer.profile_steps="[${PROFILE_STEP}]"
+      )
+      ;;
+    memory)
+      memory_ranks="$PROFILE_RANKS"
+      profile_args=(
+        memory_profiler.profile_steps="[${PROFILE_STEP}]"
+        memory_profiler.max_entries=200000
+      )
+      ;;
+    *)
+      echo "Unknown profile kind: ${profile_kind}. Expected kernel or memory." | tee -a "$launcher_log"
+      return 2
+      ;;
+  esac
+
+  echo "===== ${trial_name} start $(date -Is), kind=${profile_kind}, step=${PROFILE_STEP}, ranks=${PROFILE_RANKS} =====" | tee -a "$launcher_log"
+  monitor_gpu "$mem_csv" &
+  local monitor_pid=$!
+
+  AREAL_PERF_TRACER_RANKS="${perf_ranks}" \
+  AREAL_MEMORY_PROFILER_RANKS="${memory_ranks}" \
+  AREAL_TORCH_PROFILER_PROFILE_MEMORY="${torch_profiler_profile_memory}" \
+  python -m areal.infra.launcher.local examples/profile/train_sft_profile.py \
+    --config "$CONFIG" \
+    experiment_name="${EXPERIMENT_NAME}" \
+    trial_name="${trial_name}" \
+    total_train_steps="${TOTAL_STEPS}" \
+    actor.path="${MODEL_PATH}" \
+    tokenizer_path="${MODEL_PATH}" \
+    train_dataset.batch_size="${TRAIN_BATCH_SIZE}" \
+    train_dataset.max_length="${PROFILE_FAKE_SEQ_LEN}" \
+    profile.fake_seq_len="${PROFILE_FAKE_SEQ_LEN}" \
+    profile.fake_dataset_size="${PROFILE_FAKE_DATASET_SIZE}" \
+    profile.fake_loss_start_ratio="${PROFILE_FAKE_LOSS_START_RATIO}" \
+    cluster.fileroot="${FILEROOT}" \
+    cluster.name_resolve.nfs_record_root="${name_resolve_root}" \
+    cluster.n_nodes=1 \
+    cluster.n_gpus_per_node="${N_GPUS_PER_NODE}" \
+    saver.freq_epochs=null \
+    saver.freq_steps=null \
+    recover.mode=disabled \
+    recover.freq_epochs=null \
+    recover.freq_steps=null \
+    evaluator.freq_epochs=null \
+    evaluator.freq_steps=null \
+    stats_logger.wandb.mode=disabled \
+    "${profile_args[@]}" 2>&1 | tee -a "$launcher_log"
+  local launch_status=${PIPESTATUS[0]}
+  local case_status=$launch_status
+
+  kill "$monitor_pid" 2>/dev/null || true
+  wait "$monitor_pid" 2>/dev/null || true
+
+  if step_done "$trainer_log"; then
+    case_status=0
+  fi
+
+  python examples/profile/postprocess_profile.py \
+    --log-dir "$trial_log_dir" \
+    --run-dir "$case_dir" \
+    --profile-kind "$profile_kind" \
+    --profile-step "$PROFILE_STEP" \
+    --trainer-log "$trainer_log" \
+    --nvidia-smi-csv "$mem_csv" >> "$launcher_log" 2>&1 || true
+
+  local trace_count snapshot_count
+  trace_count=$(count_files "${trial_log_dir}/perf_tracer/*/traces-*.jsonl")
+  snapshot_count=$(count_files "${trial_log_dir}/memory_snapshots/step_${PROFILE_STEP}/snapshot_*.pickle")
+  printf "%s\t%s\t%s\t%s\t%s\t%s\t%s\n" \
+    "$profile_kind" "$trial_name" "$case_status" "$launch_status" "$trace_count" "$snapshot_count" "$trainer_log" \
+    | tee -a "${RUN_ROOT}/summary.tsv"
+  echo "===== ${trial_name} end $(date -Is), status=${case_status}, launcher_status=${launch_status} =====" | tee -a "$launcher_log"
+  return "$case_status"
+}
+
+printf "profile_kind\ttrial_name\tstatus\tlauncher_status\ttrace_file_count\tmemory_snapshot_count\ttrainer_log\n" > "${RUN_ROOT}/summary.tsv"
+echo "Run root: ${RUN_ROOT}" | tee "${RUN_ROOT}/profile_settings.log"
+echo "Model: ${MODEL_PATH}" | tee -a "${RUN_ROOT}/profile_settings.log"
+echo "Fake data: seq_len=${PROFILE_FAKE_SEQ_LEN}, dataset_size=${PROFILE_FAKE_DATASET_SIZE}, loss_start_ratio=${PROFILE_FAKE_LOSS_START_RATIO}, batch_size=${TRAIN_BATCH_SIZE}" | tee -a "${RUN_ROOT}/profile_settings.log"
+
+overall_status=0
+if should_run_kind kernel; then
+  run_case kernel || overall_status=$?
+fi
+if should_run_kind memory; then
+  run_case memory || overall_status=$?
+fi
+
+echo "Summary: ${RUN_ROOT}/summary.tsv"
+exit "$overall_status"
