@@ -6,7 +6,7 @@ enable_offload: false
 total_train_epochs: 1
 total_train_steps: 2
 tokenizer_path: ${actor.path}
-allocation_mode: "megatron:(attn:d1p1t4c2|ffn:d1p1e8)"
+allocation_mode: "megatron:(attn:d2p1t2c2|ffn:d2p1e4)"
 
 cluster:
   n_nodes: 1
@@ -22,7 +22,7 @@ scheduler:
 actor:
   experiment_name: ${experiment_name}
   trial_name: ${trial_name}
-  backend: "megatron:(attn:d1p1t4c2|ffn:d1p1e8)"
+  backend: "megatron:(attn:d2p1t2c2|ffn:d2p1e4)"
   path: Qwen/Qwen3-30B-A3B
   init_from_scratch: false
   disable_dropout: true
@@ -30,10 +30,10 @@ actor:
   dtype: bfloat16
   grad_reduce_dtype: float32
   mb_spec:
-    n_mbs: 1
+    n_mbs: 4
     granularity: 1
     max_tokens_per_mb: 131072
-    n_mbs_divisor: 1
+    n_mbs_divisor: 4
   optimizer:
     type: adam
     lr: 3.0e-6
@@ -79,7 +79,7 @@ profile:
   fake_loss_start_ratio: 0.5
 
 train_dataset:
-  batch_size: 1
+  batch_size: 4
   shuffle: false
   pin_memory: true
   num_workers: 0

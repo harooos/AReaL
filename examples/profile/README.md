@@ -7,7 +7,8 @@ profile 与 memory profile。
 
 - `train_sft_profile.py`: SFT 入口。它不读取外部 JSONL，而是用真实 tokenizer 编码一段结构化 SWE/代码修复对话，再重复截断到
   131072 token。
-- `qwen3_30b_a3b_sft_profile.yaml`: 1 节点 8 GPU 的 Megatron MoE profile 配置。
+- `qwen3_30b_a3b_sft_profile.yaml`: 1 节点 8 GPU 的 Megatron MoE profile 配置， 默认使用
+  `megatron:(attn:d2p1t2c2|ffn:d2p1e4)`。
 - `run_qwen3_30b_a3b_sft_profile.sh`: 一键运行 kernel/memory 两类 profile。
 - `postprocess_profile.py`: 生成 kernel Chrome trace 视图和 profile summary。
 
@@ -37,7 +38,8 @@ PROFILE_KINDS=kernel,memory
 PROFILE_FAKE_SEQ_LEN=131072
 PROFILE_FAKE_DATASET_SIZE=8
 PROFILE_FAKE_LOSS_START_RATIO=0.5
-TRAIN_BATCH_SIZE=1
+TRAIN_BATCH_SIZE=4
+PROFILE_N_MBS=4
 ```
 
 只跑 kernel profile：

@@ -15,7 +15,8 @@ TOTAL_STEPS=${TOTAL_STEPS:-$((PROFILE_STEP + 1))}
 PROFILE_RANKS=${PROFILE_RANKS:-0}
 PROFILE_KINDS=${PROFILE_KINDS:-kernel,memory}
 N_GPUS_PER_NODE=${N_GPUS_PER_NODE:-8}
-TRAIN_BATCH_SIZE=${TRAIN_BATCH_SIZE:-1}
+TRAIN_BATCH_SIZE=${TRAIN_BATCH_SIZE:-4}
+PROFILE_N_MBS=${PROFILE_N_MBS:-4}
 PROFILE_FAKE_SEQ_LEN=${PROFILE_FAKE_SEQ_LEN:-131072}
 PROFILE_FAKE_DATASET_SIZE=${PROFILE_FAKE_DATASET_SIZE:-8}
 PROFILE_FAKE_LOSS_START_RATIO=${PROFILE_FAKE_LOSS_START_RATIO:-0.5}
@@ -109,6 +110,8 @@ run_case() {
     tokenizer_path="${MODEL_PATH}" \
     train_dataset.batch_size="${TRAIN_BATCH_SIZE}" \
     train_dataset.max_length="${PROFILE_FAKE_SEQ_LEN}" \
+    actor.mb_spec.n_mbs="${PROFILE_N_MBS}" \
+    actor.mb_spec.n_mbs_divisor="${PROFILE_N_MBS}" \
     profile.fake_seq_len="${PROFILE_FAKE_SEQ_LEN}" \
     profile.fake_dataset_size="${PROFILE_FAKE_DATASET_SIZE}" \
     profile.fake_loss_start_ratio="${PROFILE_FAKE_LOSS_START_RATIO}" \
@@ -156,7 +159,7 @@ run_case() {
 printf "profile_kind\ttrial_name\tstatus\tlauncher_status\ttrace_file_count\tmemory_snapshot_count\ttrainer_log\n" > "${RUN_ROOT}/summary.tsv"
 echo "Run root: ${RUN_ROOT}" | tee "${RUN_ROOT}/profile_settings.log"
 echo "Model: ${MODEL_PATH}" | tee -a "${RUN_ROOT}/profile_settings.log"
-echo "Fake data: seq_len=${PROFILE_FAKE_SEQ_LEN}, dataset_size=${PROFILE_FAKE_DATASET_SIZE}, loss_start_ratio=${PROFILE_FAKE_LOSS_START_RATIO}, batch_size=${TRAIN_BATCH_SIZE}" | tee -a "${RUN_ROOT}/profile_settings.log"
+echo "Fake data: seq_len=${PROFILE_FAKE_SEQ_LEN}, dataset_size=${PROFILE_FAKE_DATASET_SIZE}, loss_start_ratio=${PROFILE_FAKE_LOSS_START_RATIO}, batch_size=${TRAIN_BATCH_SIZE}, n_mbs=${PROFILE_N_MBS}" | tee -a "${RUN_ROOT}/profile_settings.log"
 
 overall_status=0
 if should_run_kind kernel; then
