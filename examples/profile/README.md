@@ -70,10 +70,10 @@ bash examples/profile/run_qwen3_30b_a3b_sft_profile.sh
 
 ## 产物
 
-脚本默认把运行侧产物放在仓库根目录：
+脚本默认把运行侧产物放在 `examples/profile/` 下：
 
 ```text
-profile_data/<timestamp>_qwen3-30b-a3b_fake128k_sft_profile/
+examples/profile/profile_data/<timestamp>_qwen3-30b-a3b_fake128k_sft_profile/
   profile_settings.log
   summary.tsv
   qwen3_30b_a3b_fake128k_kernel_<timestamp>/
@@ -118,7 +118,7 @@ python examples/profile/postprocess_profile.py \
   --profile-kind kernel \
   --profile-step 1 \
   --log-dir /path/to/FILEROOT/logs/<user>/qwen3-30b-a3b-sft-profile/<trial_name> \
-  --run-dir profile_data/reprocess/<trial_name> \
+  --run-dir examples/profile/profile_data/reprocess/<trial_name> \
   --trainer-log /path/to/trainer.log \
   --nvidia-smi-csv /path/to/nvidia_smi.csv
 ```

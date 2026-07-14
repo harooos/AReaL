@@ -19,7 +19,7 @@ TRAIN_BATCH_SIZE=${TRAIN_BATCH_SIZE:-1}
 PROFILE_FAKE_SEQ_LEN=${PROFILE_FAKE_SEQ_LEN:-131072}
 PROFILE_FAKE_DATASET_SIZE=${PROFILE_FAKE_DATASET_SIZE:-8}
 PROFILE_FAKE_LOSS_START_RATIO=${PROFILE_FAKE_LOSS_START_RATIO:-0.5}
-RUN_ROOT=${RUN_ROOT:-${ROOT_DIR}/profile_data/${STAMP}_qwen3-30b-a3b_fake128k_sft_profile}
+RUN_ROOT=${RUN_ROOT:-${ROOT_DIR}/examples/profile/profile_data/${STAMP}_qwen3-30b-a3b_fake128k_sft_profile}
 AREAL_LOG_USER=${AREAL_LOG_USER:-$(python -c 'import getpass; print(getpass.getuser())')}
 
 mkdir -p "$RUN_ROOT"
