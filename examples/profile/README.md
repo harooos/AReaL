@@ -81,11 +81,19 @@ examples/profile/profile_data/<timestamp>_qwen3-30b-a3b_fake128k_sft_profile/
     nvidia_smi.csv
     profile_summary.json
     profile_summary.md
+    kernel_traces/master/
+      traces-r0.chrome.json
+      traces-r0.split_clean.chrome.json
+      traces-r0.gpu_only.chrome.json
+      traces-r0.cpu_only.chrome.json
+      traces-r0.cuda_api_only.chrome.json
   qwen3_30b_a3b_fake128k_memory_<timestamp>/
     launcher.log
     nvidia_smi.csv
     profile_summary.json
     profile_summary.md
+    memory_snapshots/step_<PROFILE_STEP>/
+      snapshot_*.pickle
 ```
 
 AReaL 原始日志仍在 `FILEROOT` 下：
@@ -97,7 +105,8 @@ ${FILEROOT}/logs/<user>/qwen3-30b-a3b-sft-profile/<trial_name>/
   memory_snapshots/step_<PROFILE_STEP>/snapshot_*.pickle
 ```
 
-kernel profile 后处理会在 trace 文件旁生成：
+kernel profile 后处理会在 trace 文件旁生成 Chrome trace 视图，并复制一份到
+`profile_data/.../kernel_traces/<role>/`：
 
 ```text
 traces-r0.chrome.json

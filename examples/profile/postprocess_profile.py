@@ -8,6 +8,7 @@ import argparse
 import csv
 import json
 import re
+import shutil
 from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
@@ -64,13 +65,36 @@ def _max_trainer_memory_gb(log_path: Path | None) -> dict[str, float | None]:
     return result
 
 
-def _materialize_kernel_views(log_dir: Path) -> dict[str, list[str]]:
+def _materialize_kernel_views(log_dir: Path, run_dir: Path) -> dict[str, list[str]]:
     trace_files = sorted(log_dir.glob("perf_tracer/*/traces-*.jsonl"))
     outputs: dict[str, list[str]] = {}
     for trace_file in trace_files:
         generated = write_kernel_profile_trace_views(trace_file)
-        outputs[str(trace_file)] = [str(path) for path in generated.values()]
+        archive_dir = run_dir / "kernel_traces" / trace_file.parent.name
+        archive_dir.mkdir(parents=True, exist_ok=True)
+        archived_paths = []
+        for path in generated.values():
+            archived_path = archive_dir / path.name
+            shutil.copy2(path, archived_path)
+            archived_paths.append(str(archived_path))
+        outputs[str(trace_file)] = archived_paths
     return outputs
+
+
+def _archive_memory_snapshots(
+    snapshot_files: Sequence[Path],
+    *,
+    run_dir: Path,
+    profile_step: int,
+) -> list[str]:
+    archive_dir = run_dir / "memory_snapshots" / f"step_{profile_step}"
+    archived_paths: list[str] = []
+    for snapshot_file in snapshot_files:
+        archive_dir.mkdir(parents=True, exist_ok=True)
+        archived_path = archive_dir / snapshot_file.name
+        shutil.copy2(snapshot_file, archived_path)
+        archived_paths.append(str(archived_path))
+    return archived_paths
 
 
 def _write_markdown_summary(
@@ -106,6 +130,12 @@ def _write_markdown_summary(
                 lines.append(f"  - `{output}`")
     else:
         lines.append("- No kernel trace views generated.")
+    lines.extend(["", "## Archived Memory Snapshots", ""])
+    if summary["archived_memory_snapshots"]:
+        for snapshot in summary["archived_memory_snapshots"]:
+            lines.append(f"- `{snapshot}`")
+    else:
+        lines.append("- No memory snapshots archived.")
     lines.append("")
     output_path.write_text("\n".join(lines), encoding="utf-8")
 
@@ -126,7 +156,12 @@ def postprocess_profile(
         log_dir.glob(f"memory_snapshots/step_{profile_step}/snapshot_*.pickle")
     )
     kernel_views = (
-        _materialize_kernel_views(log_dir) if profile_kind == "kernel" else {}
+        _materialize_kernel_views(log_dir, run_dir) if profile_kind == "kernel" else {}
+    )
+    archived_snapshots = _archive_memory_snapshots(
+        snapshot_files,
+        run_dir=run_dir,
+        profile_step=profile_step,
     )
     summary: dict[str, Any] = {
         "profile_kind": profile_kind,
@@ -138,6 +173,7 @@ def postprocess_profile(
         "peak_nvidia_smi_mib": _max_nvidia_smi_mib(nvidia_smi_csv),
         "trainer_memory_gb": _max_trainer_memory_gb(trainer_log),
         "kernel_trace_views": kernel_views,
+        "archived_memory_snapshots": archived_snapshots,
     }
 
     json_path = run_dir / "profile_summary.json"

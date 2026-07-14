@@ -118,6 +118,13 @@ def test_postprocess_profile_writes_kernel_views_and_summary(tmp_path: Path) -> 
     assert summary["memory_snapshot_count"] == 1
     assert summary["peak_nvidia_smi_mib"] == 456
     assert summary["trainer_memory_gb"]["memory allocated"] == 1.25
+    assert len(summary["archived_memory_snapshots"]) == 1
     assert (run_dir / "profile_summary.json").exists()
     assert (run_dir / "profile_summary.md").exists()
     assert (trace_dir / "traces-r0.gpu_only.chrome.json").exists()
+    assert (
+        run_dir / "kernel_traces" / "actor" / "traces-r0.gpu_only.chrome.json"
+    ).exists()
+    assert (
+        run_dir / "memory_snapshots" / "step_1" / "snapshot_rank00_p0d0c0t0.pickle"
+    ).exists()
